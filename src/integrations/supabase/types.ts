@@ -14,13 +14,246 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cart_items: {
+        Row: {
+          added_by: string
+          cart_id: string
+          created_at: string
+          id: string
+          product_id: string
+          qty: number
+        }
+        Insert: {
+          added_by: string
+          cart_id: string
+          created_at?: string
+          id?: string
+          product_id: string
+          qty?: number
+        }
+        Update: {
+          added_by?: string
+          cart_id?: string
+          created_at?: string
+          id?: string
+          product_id?: string
+          qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_items_cart_id_fkey"
+            columns: ["cart_id"]
+            isOneToOne: false
+            referencedRelation: "carts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cart_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cart_members: {
+        Row: {
+          cart_id: string
+          color: string
+          joined_at: string
+          user_id: string
+        }
+        Insert: {
+          cart_id: string
+          color?: string
+          joined_at?: string
+          user_id: string
+        }
+        Update: {
+          cart_id?: string
+          color?: string
+          joined_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_members_cart_id_fkey"
+            columns: ["cart_id"]
+            isOneToOne: false
+            referencedRelation: "carts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carts: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          share_code: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id: string
+          share_code: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          share_code?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      order_splits: {
+        Row: {
+          amount: number
+          id: string
+          items: number
+          order_id: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          id?: string
+          items?: number
+          order_id: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          id?: string
+          items?: number
+          order_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_splits_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          cart_id: string
+          created_at: string
+          id: string
+          order_code: string
+          placed_by: string
+          subtotal: number
+          tax: number
+          total: number
+        }
+        Insert: {
+          cart_id: string
+          created_at?: string
+          id?: string
+          order_code: string
+          placed_by: string
+          subtotal: number
+          tax: number
+          total: number
+        }
+        Update: {
+          cart_id?: string
+          created_at?: string
+          id?: string
+          order_code?: string
+          placed_by?: string
+          subtotal?: number
+          tax?: number
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_cart_id_fkey"
+            columns: ["cart_id"]
+            isOneToOne: false
+            referencedRelation: "carts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          discount: number | null
+          features: Json
+          id: string
+          image: string
+          name: string
+          price: number
+          rating: number
+          reviews: number
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description: string
+          discount?: number | null
+          features?: Json
+          id: string
+          image: string
+          name: string
+          price: number
+          rating?: number
+          reviews?: number
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          discount?: number | null
+          features?: Json
+          id?: string
+          image?: string
+          name?: string
+          price?: number
+          rating?: number
+          reviews?: number
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_cart_member: {
+        Args: { _cart: string; _user: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
