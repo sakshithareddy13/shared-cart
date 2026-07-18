@@ -1,147 +1,157 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, createContext, useContext } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
 import { products, priceAfterDiscount, type Product } from "./products";
+import {
+  getCart, createCart, renameCart, joinCartByCode, removeMember,
+  addItem, updateItemQty, removeItem, placeOrder,
+  type CartDTO, type CartMemberDTO,
+} from "./carts.functions";
 
-export type Member = { id: string; name: string; color: string };
-export type CartItem = { productId: string; qty: number; addedBy: string };
+const CART_STORAGE_KEY = "shopez.currentCartId";
 
-type CartState = {
-  cartName: string;
-  members: Member[];
-  items: CartItem[];
-  currentMemberId: string;
-};
+type AuthCtx = { userId: string | null; ready: boolean };
+const AuthContext = createContext<AuthCtx>({ userId: null, ready: false });
 
-const COLORS = [
-  "oklch(0.65 0.18 40)",
-  "oklch(0.6 0.15 200)",
-  "oklch(0.65 0.16 150)",
-  "oklch(0.6 0.2 320)",
-  "oklch(0.7 0.17 90)",
-  "oklch(0.6 0.18 20)",
-];
+export function useAuth() { return useContext(AuthContext); }
 
-const STORAGE_KEY = "shopez.sharedcart.v1";
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AuthCtx>({ userId: null, ready: false });
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setState({ userId: data.session?.user.id ?? null, ready: true });
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setState({ userId: session?.user.id ?? null, ready: true });
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+}
 
-const defaultState: CartState = {
-  cartName: "Sunday Grocery Run",
-  members: [
-    { id: "m1", name: "You", color: COLORS[0] },
-    { id: "m2", name: "Alex", color: COLORS[1] },
-    { id: "m3", name: "Sam", color: COLORS[2] },
-  ],
-  items: [],
-  currentMemberId: "m1",
-};
-
-type Ctx = {
-  state: CartState;
-  addItem: (productId: string) => void;
-  removeItem: (productId: string) => void;
-  updateQty: (productId: string, qty: number) => void;
-  addMember: (name: string) => void;
-  removeMember: (id: string) => void;
-  setCurrentMember: (id: string) => void;
-  setCartName: (n: string) => void;
-  clear: () => void;
-  totals: {
-    subtotal: number;
-    tax: number;
-    total: number;
-    perMember: { member: Member; amount: number; items: number }[];
-    byProduct: { product: Product; qty: number; line: number; addedBy: Member | undefined }[];
-  };
-};
-
-const CartCtx = createContext<Ctx | null>(null);
-
+// Backwards-compat wrapper (was SharedCartProvider). No context needed now,
+// but keep the export so __root.tsx doesn't break.
 export function SharedCartProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<CartState>(defaultState);
-  const [hydrated, setHydrated] = useState(false);
+  return <AuthProvider>{children}</AuthProvider>;
+}
+
+export type CartTotals = {
+  subtotal: number;
+  tax: number;
+  total: number;
+  perMember: { member: CartMemberDTO; amount: number; items: number }[];
+  byProduct: { itemId: string; product: Product; qty: number; line: number; addedBy?: CartMemberDTO }[];
+};
+
+export function useSharedCart() {
+  const { userId, ready } = useAuth();
+  const qc = useQueryClient();
+  const [cartId, setCartId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState({ ...defaultState, ...JSON.parse(raw) });
-    } catch {}
-    setHydrated(true);
+    if (typeof window === "undefined") return;
+    setCartId(localStorage.getItem(CART_STORAGE_KEY));
   }, []);
 
+  const persistCartId = (id: string | null) => {
+    setCartId(id);
+    if (typeof window !== "undefined") {
+      if (id) localStorage.setItem(CART_STORAGE_KEY, id);
+      else localStorage.removeItem(CART_STORAGE_KEY);
+    }
+  };
+
+  const getCartFn = useServerFn(getCart);
+  const createCartFn = useServerFn(createCart);
+  const renameFn = useServerFn(renameCart);
+  const joinFn = useServerFn(joinCartByCode);
+  const removeMemberFn = useServerFn(removeMember);
+  const addItemFn = useServerFn(addItem);
+  const updateQtyFn = useServerFn(updateItemQty);
+  const removeItemFn = useServerFn(removeItem);
+  const placeOrderFn = useServerFn(placeOrder);
+
+  const query = useQuery({
+    queryKey: ["cart", cartId, userId],
+    enabled: !!cartId && !!userId,
+    queryFn: () => getCartFn({ data: { cartId: cartId! } }) as Promise<CartDTO | null>,
+  });
+
+  const cart = query.data ?? null;
   useEffect(() => {
-    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state, hydrated]);
+    // Auto-clear stale id if the cart was deleted or checked-out
+    if (cartId && query.isFetched && cart === null) persistCartId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartId, query.isFetched, cart]);
 
-  const value = useMemo<Ctx>(() => {
-    const byProduct = state.items
-      .map((it) => {
-        const product = products.find((p) => p.id === it.productId);
-        if (!product) return null;
-        const line = priceAfterDiscount(product) * it.qty;
-        const addedBy = state.members.find((m) => m.id === it.addedBy);
-        return { product, qty: it.qty, line, addedBy };
-      })
-      .filter(Boolean) as Ctx["totals"]["byProduct"];
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["cart"] });
 
+  const totals: CartTotals = useMemo(() => {
+    if (!cart) return { subtotal: 0, tax: 0, total: 0, perMember: [], byProduct: [] };
+    const byProduct = cart.items.map((it) => {
+      const product = products.find((p) => p.id === it.product_id);
+      if (!product) return null;
+      const line = priceAfterDiscount(product) * it.qty;
+      const addedBy = cart.members.find((m) => m.user_id === it.added_by);
+      return { itemId: it.id, product, qty: it.qty, line, addedBy };
+    }).filter(Boolean) as CartTotals["byProduct"];
     const subtotal = byProduct.reduce((s, r) => s + r.line, 0);
     const tax = Math.round(subtotal * 0.08);
     const total = subtotal + tax;
-
-    const perMember = state.members.map((m) => {
-      const memberItems = byProduct.filter((r) => r.addedBy?.id === m.id);
-      const memberSubtotal = memberItems.reduce((s, r) => s + r.line, 0);
-      const share = subtotal > 0 ? memberSubtotal / subtotal : 1 / Math.max(state.members.length, 1);
-      return {
-        member: m,
-        amount: Math.round(total * share),
-        items: memberItems.reduce((s, r) => s + r.qty, 0),
-      };
+    const perMember = cart.members.map((m) => {
+      const mine = byProduct.filter((r) => r.addedBy?.user_id === m.user_id);
+      const mySubtotal = mine.reduce((s, r) => s + r.line, 0);
+      const share = subtotal > 0 ? mySubtotal / subtotal : 1 / Math.max(cart.members.length, 1);
+      return { member: m, amount: Math.round(total * share), items: mine.reduce((s, r) => s + r.qty, 0) };
     });
+    return { subtotal, tax, total, perMember, byProduct };
+  }, [cart]);
 
-    return {
-      state,
-      addItem: (productId) =>
-        setState((s) => {
-          const existing = s.items.find((i) => i.productId === productId && i.addedBy === s.currentMemberId);
-          if (existing) {
-            return {
-              ...s,
-              items: s.items.map((i) => (i === existing ? { ...i, qty: i.qty + 1 } : i)),
-            };
-          }
-          return { ...s, items: [...s.items, { productId, qty: 1, addedBy: s.currentMemberId }] };
-        }),
-      removeItem: (productId) =>
-        setState((s) => ({ ...s, items: s.items.filter((i) => i.productId !== productId) })),
-      updateQty: (productId, qty) =>
-        setState((s) => ({
-          ...s,
-          items: qty <= 0
-            ? s.items.filter((i) => i.productId !== productId)
-            : s.items.map((i) => (i.productId === productId ? { ...i, qty } : i)),
-        })),
-      addMember: (name) =>
-        setState((s) => {
-          const id = `m${Date.now()}`;
-          return { ...s, members: [...s.members, { id, name, color: COLORS[s.members.length % COLORS.length] }] };
-        }),
-      removeMember: (id) =>
-        setState((s) => ({
-          ...s,
-          members: s.members.filter((m) => m.id !== id),
-          items: s.items.filter((i) => i.addedBy !== id),
-          currentMemberId: s.currentMemberId === id ? s.members[0]?.id ?? "" : s.currentMemberId,
-        })),
-      setCurrentMember: (id) => setState((s) => ({ ...s, currentMemberId: id })),
-      setCartName: (n) => setState((s) => ({ ...s, cartName: n })),
-      clear: () => setState((s) => ({ ...s, items: [] })),
-      totals: { subtotal, tax, total, perMember, byProduct },
-    };
-  }, [state]);
+  const create = useMutation({
+    mutationFn: (name?: string) => createCartFn({ data: { name } }) as Promise<any>,
+    onSuccess: (c: any) => { persistCartId(c.id); invalidate(); },
+  });
+  const rename = useMutation({
+    mutationFn: (name: string) => renameFn({ data: { cartId: cart!.id, name } }),
+    onSuccess: invalidate,
+  });
+  const join = useMutation({
+    mutationFn: (code: string) => joinFn({ data: { code } }) as Promise<{ cartId: string }>,
+    onSuccess: (r) => { persistCartId(r.cartId); invalidate(); },
+  });
+  const kick = useMutation({
+    mutationFn: (uid: string) => removeMemberFn({ data: { cartId: cart!.id, userId: uid } }),
+    onSuccess: invalidate,
+  });
+  const add = useMutation({
+    mutationFn: (productId: string) => addItemFn({ data: { cartId: cart!.id, productId } }),
+    onSuccess: invalidate,
+  });
+  const setQty = useMutation({
+    mutationFn: (v: { itemId: string; qty: number }) => updateQtyFn({ data: v }),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (itemId: string) => removeItemFn({ data: { itemId } }),
+    onSuccess: invalidate,
+  });
+  const checkout = useMutation({
+    mutationFn: () => placeOrderFn({ data: { cartId: cart!.id } }) as Promise<any>,
+    onSuccess: () => { invalidate(); },
+  });
 
-  return <CartCtx.Provider value={value}>{children}</CartCtx.Provider>;
-}
+  const switchTo = (id: string) => persistCartId(id);
+  const leaveCurrent = () => persistCartId(null);
 
-export function useSharedCart() {
-  const v = useContext(CartCtx);
-  if (!v) throw new Error("useSharedCart outside provider");
-  return v;
+  return {
+    ready,
+    userId,
+    cartId,
+    cart,
+    totals,
+    isLoading: query.isLoading,
+    create, rename, join, kick, add, setQty, remove, checkout,
+    switchTo, leaveCurrent,
+  };
 }
