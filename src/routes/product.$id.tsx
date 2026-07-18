@@ -1,8 +1,8 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { Star, Check, Users, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { products, priceAfterDiscount } from "@/lib/products";
-import { useSharedCart } from "@/lib/shared-cart";
+import { useSharedCart, useAuth } from "@/lib/shared-cart";
 
 export const Route = createFileRoute("/product/$id")({
   loader: ({ params }) => {
@@ -39,10 +39,23 @@ const REVIEWS = [
 
 function ProductPage() {
   const { product } = Route.useLoaderData();
-  const { addItem, state, setCurrentMember, totals } = useSharedCart();
+  const navigate = useNavigate();
+  const { userId } = useAuth();
+  const { cart, add, create, totals } = useSharedCart();
   const finalPrice = priceAfterDiscount(product);
-  const current = state.members.find((m) => m.id === state.currentMemberId);
   const inCart = totals.byProduct.find((r) => r.product.id === product.id);
+
+  async function handleAdd() {
+    if (!userId) { navigate({ to: "/auth" }); return; }
+    try {
+      if (!cart) {
+        await create.mutateAsync("Shared cart");
+        // Retry add after cart exists — refetch cycle will land it
+      }
+      await add.mutateAsync(product.id);
+      toast.success(`Added ${product.name}`);
+    } catch (e: any) { toast.error(e.message ?? "Could not add"); }
+  }
 
   return (
     <div className="container-page py-10">
@@ -91,28 +104,13 @@ function ProductPage() {
 
           <div className="mt-8 rounded-2xl border border-border bg-secondary/40 p-5">
             <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-              <Users className="h-3.5 w-3.5" /> Adding as
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {state.members.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setCurrentMember(m.id)}
-                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
-                    state.currentMemberId === m.id ? "border-foreground bg-background" : "border-border bg-background/50 hover:border-foreground/30"
-                  }`}
-                >
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />
-                  {m.name}
-                </button>
-              ))}
+              <Users className="h-3.5 w-3.5" />
+              {cart ? `Adding to "${cart.name}" · ${cart.members.length} member${cart.members.length === 1 ? "" : "s"}` : "Adding will start a shared cart"}
             </div>
             <button
-              onClick={() => {
-                addItem(product.id);
-                toast.success(`Added to ${current?.name}'s share`);
-              }}
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90"
+              onClick={handleAdd}
+              disabled={add.isPending || create.isPending}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90 disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
               Add to shared cart {inCart && `(${inCart.qty} in cart)`}
@@ -121,7 +119,6 @@ function ProductPage() {
         </div>
       </div>
 
-      {/* Reviews */}
       <section className="mt-16">
         <h2 className="font-display text-3xl">What people are saying</h2>
         <div className="mt-6 grid gap-4 md:grid-cols-3">

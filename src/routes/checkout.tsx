@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { CheckCircle2, Lock } from "lucide-react";
+import { toast } from "sonner";
 import { useSharedCart } from "@/lib/shared-cart";
 
 export const Route = createFileRoute("/checkout")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Checkout — ShopEZ" },
@@ -13,10 +15,21 @@ export const Route = createFileRoute("/checkout")({
   component: Checkout,
 });
 
+type PlacedOrder = { orderCode: string; splits: { user_id: string; amount: number }[] };
+
 function Checkout() {
-  const { state, totals, clear } = useSharedCart();
-  const [placed, setPlaced] = useState(false);
-  const [orderId] = useState(() => `SEZ-${Math.random().toString(36).slice(2, 8).toUpperCase()}`);
+  const { ready, userId, cart, totals, checkout } = useSharedCart();
+  const [placed, setPlaced] = useState<PlacedOrder | null>(null);
+
+  if (!ready) return <div className="container-page py-20 text-center text-muted-foreground">Loading…</div>;
+  if (!userId) {
+    return (
+      <div className="container-page py-20 text-center">
+        <h1 className="font-display text-3xl">Sign in to check out</h1>
+        <Link to="/auth" className="mt-4 inline-block rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground">Sign in</Link>
+      </div>
+    );
+  }
 
   if (placed) {
     return (
@@ -27,18 +40,21 @@ function Checkout() {
           </div>
           <h1 className="mt-5 font-display text-3xl">Order confirmed</h1>
           <p className="mt-2 text-muted-foreground">
-            We've sent each person their share and a receipt. Order <span className="font-medium text-foreground">{orderId}</span>.
+            We've sent each person their share and a receipt. Order <span className="font-medium text-foreground">{placed.orderCode}</span>.
           </p>
           <div className="mt-6 space-y-2 text-sm">
-            {totals.perMember.map((r) => (
-              <div key={r.member.id} className="flex items-center justify-between rounded-xl border border-border px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.member.color }} />
-                  {r.member.name}
+            {placed.splits.map((s) => {
+              const m = cart?.members.find((mm) => mm.user_id === s.user_id);
+              return (
+                <div key={s.user_id} className="flex items-center justify-between rounded-xl border border-border px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: m?.color }} />
+                    {m?.display_name ?? "Member"}
+                  </div>
+                  <div className="font-medium">${s.amount}</div>
                 </div>
-                <div className="font-medium">${r.amount}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="mt-8 flex justify-center gap-3">
             <Link to="/shop" className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground">Keep shopping</Link>
@@ -49,7 +65,7 @@ function Checkout() {
     );
   }
 
-  if (totals.byProduct.length === 0) {
+  if (!cart || totals.byProduct.length === 0) {
     return (
       <div className="container-page py-20 text-center">
         <h1 className="font-display text-3xl">Your cart is empty</h1>
@@ -67,7 +83,13 @@ function Checkout() {
 
       <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
         <form
-          onSubmit={(e) => { e.preventDefault(); setPlaced(true); clear(); }}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              const r = await checkout.mutateAsync();
+              setPlaced({ orderCode: r.orderCode, splits: r.splits });
+            } catch (err: any) { toast.error(err.message ?? "Checkout failed"); }
+          }}
           className="space-y-6 rounded-3xl border border-border bg-card p-6"
         >
           <fieldset className="space-y-4">
@@ -94,9 +116,9 @@ function Checkout() {
             </div>
           </fieldset>
 
-          <button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90">
+          <button disabled={checkout.isPending} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90 disabled:opacity-60">
             <Lock className="h-4 w-4" />
-            Place order · ${totals.total}
+            {checkout.isPending ? "Placing order…" : `Place order · $${totals.total}`}
           </button>
         </form>
 
@@ -104,10 +126,10 @@ function Checkout() {
           <h2 className="font-display text-xl">Split summary</h2>
           <div className="mt-4 space-y-2 text-sm">
             {totals.perMember.map((r) => (
-              <div key={r.member.id} className="flex items-center justify-between">
+              <div key={r.member.user_id} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.member.color }} />
-                  {r.member.name}
+                  {r.member.display_name}
                 </div>
                 <span className="font-medium">${r.amount}</span>
               </div>
@@ -121,7 +143,7 @@ function Checkout() {
               <span className="font-display text-lg">${totals.total}</span>
             </div>
           </div>
-          <div className="mt-5 text-xs text-muted-foreground">Shared with {state.members.length} people</div>
+          <div className="mt-5 text-xs text-muted-foreground">Shared with {cart.members.length} people</div>
         </aside>
       </div>
     </div>

@@ -13,8 +13,10 @@ import { Route as ShopRouteImport } from './routes/shop'
 import { Route as SellersRouteImport } from './routes/sellers'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProductIdRouteImport } from './routes/product.$id'
+import { Route as JoinCodeRouteImport } from './routes/join.$code'
 
 const ShopRoute = ShopRouteImport.update({
   id: '/shop',
@@ -36,6 +38,11 @@ const CartRoute = CartRouteImport.update({
   path: '/cart',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -46,53 +53,84 @@ const ProductIdRoute = ProductIdRouteImport.update({
   path: '/product/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JoinCodeRoute = JoinCodeRouteImport.update({
+  id: '/join/$code',
+  path: '/join/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/sellers': typeof SellersRoute
   '/shop': typeof ShopRoute
+  '/join/$code': typeof JoinCodeRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/sellers': typeof SellersRoute
   '/shop': typeof ShopRoute
+  '/join/$code': typeof JoinCodeRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/sellers': typeof SellersRoute
   '/shop': typeof ShopRoute
+  '/join/$code': typeof JoinCodeRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/cart' | '/checkout' | '/sellers' | '/shop' | '/product/$id'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cart' | '/checkout' | '/sellers' | '/shop' | '/product/$id'
-  id:
-    | '__root__'
+  fullPaths:
     | '/'
+    | '/auth'
     | '/cart'
     | '/checkout'
     | '/sellers'
     | '/shop'
+    | '/join/$code'
+    | '/product/$id'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/auth'
+    | '/cart'
+    | '/checkout'
+    | '/sellers'
+    | '/shop'
+    | '/join/$code'
+    | '/product/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/cart'
+    | '/checkout'
+    | '/sellers'
+    | '/shop'
+    | '/join/$code'
     | '/product/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
   SellersRoute: typeof SellersRoute
   ShopRoute: typeof ShopRoute
+  JoinCodeRoute: typeof JoinCodeRoute
   ProductIdRoute: typeof ProductIdRoute
 }
 
@@ -126,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CartRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -140,15 +185,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/join/$code': {
+      id: '/join/$code'
+      path: '/join/$code'
+      fullPath: '/join/$code'
+      preLoaderRoute: typeof JoinCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
   SellersRoute: SellersRoute,
   ShopRoute: ShopRoute,
+  JoinCodeRoute: JoinCodeRoute,
   ProductIdRoute: ProductIdRoute,
 }
 export const routeTree = rootRouteImport
