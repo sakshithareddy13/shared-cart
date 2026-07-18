@@ -1,10 +1,22 @@
-import { Link } from "@tanstack/react-router";
-import { ShoppingBag, Users } from "lucide-react";
-import { useSharedCart } from "@/lib/shared-cart";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ShoppingBag, Users, LogOut } from "lucide-react";
+import { useSharedCart, useAuth } from "@/lib/shared-cart";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function SiteHeader() {
-  const { state, totals } = useSharedCart();
-  const itemCount = state.items.reduce((s, i) => s + i.qty, 0);
+  const { cart, totals } = useSharedCart();
+  const { userId } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const itemCount = cart?.items.reduce((s, i) => s + i.qty, 0) ?? 0;
+
+  async function signOut() {
+    await qc.cancelQueries();
+    qc.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
@@ -25,10 +37,12 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1.5 text-xs sm:flex">
-            <Users className="h-3.5 w-3.5" />
-            <span>{state.members.length} in cart</span>
-          </div>
+          {cart && (
+            <div className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1.5 text-xs sm:flex">
+              <Users className="h-3.5 w-3.5" />
+              <span>{cart.members.length} in cart</span>
+            </div>
+          )}
           <Link
             to="/cart"
             className="relative inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90"
@@ -41,6 +55,13 @@ export function SiteHeader() {
               </span>
             )}
           </Link>
+          {userId ? (
+            <button onClick={signOut} title="Sign out" className="grid h-9 w-9 place-items-center rounded-full border border-border text-muted-foreground hover:text-foreground">
+              <LogOut className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link to="/auth" className="rounded-full border border-border px-4 py-2 text-sm hover:border-foreground/30">Sign in</Link>
+          )}
         </div>
       </div>
     </header>
@@ -65,21 +86,12 @@ export function SiteFooter() {
           </ul>
         </div>
         <div>
-          <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sellers</div>
+          <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Company</div>
           <ul className="space-y-2 text-sm">
-            <li><Link to="/sellers" className="hover:text-brand">Seller dashboard</Link></li>
+            <li><Link to="/sellers" className="hover:text-brand">For sellers</Link></li>
           </ul>
         </div>
-        <div>
-          <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Get updates</div>
-          <form className="flex gap-2">
-            <input type="email" placeholder="you@studio.co" className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm outline-none focus:border-brand" />
-            <button className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground">Join</button>
-          </form>
-        </div>
-      </div>
-      <div className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} ShopEZ. Shop together, apart.
+        <div className="text-xs text-muted-foreground">© {new Date().getFullYear()} ShopEZ</div>
       </div>
     </footer>
   );

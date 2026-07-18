@@ -1,28 +1,65 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Minus, Plus, Trash2, UserPlus, Share2, ShoppingBag, X } from "lucide-react";
+import { Trash2, Plus, Minus, Users, Link as LinkIcon, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { useSharedCart } from "@/lib/shared-cart";
+import { useSharedCart, useAuth } from "@/lib/shared-cart";
 
 export const Route = createFileRoute("/cart")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Shared cart — ShopEZ" },
-      { name: "description", content: "Everyone in your shared cart adds what they want. The total splits automatically." },
+      { name: "description", content: "Your shared cart. Everyone adds items, the bill splits itself." },
     ],
   }),
   component: CartPage,
 });
 
 function CartPage() {
+  const { ready, userId, cart, totals, isLoading, create, rename, kick, setQty, remove, leaveCurrent } = useSharedCart();
   const navigate = useNavigate();
-  const {
-    state, totals,
-    updateQty, removeItem,
-    addMember, removeMember, setCurrentMember, setCartName, clear,
-  } = useSharedCart();
   const [newName, setNewName] = useState("");
+  const [copied, setCopied] = useState(false);
 
+  if (!ready || isLoading) {
+    return <div className="container-page py-20 text-center text-muted-foreground">Loading…</div>;
+  }
+
+  if (!userId) {
+    return (
+      <div className="container-page py-20 text-center">
+        <h1 className="font-display text-4xl">Sign in to open a shared cart</h1>
+        <p className="mt-2 text-muted-foreground">Carts belong to real accounts so we know who added what.</p>
+        <Link to="/auth" className="mt-6 inline-block rounded-full bg-primary px-6 py-3 text-sm text-primary-foreground">Sign in</Link>
+      </div>
+    );
+  }
+
+  if (!cart) {
+    return (
+      <div className="container-page py-16">
+        <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-8 shadow-soft">
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">New</div>
+          <h1 className="mt-1 font-display text-3xl">Start a shared cart</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Give it a name, then share the invite link with friends.</p>
+          <div className="mt-5 flex gap-2">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Sunday grocery run"
+              className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm" />
+            <button
+              onClick={() => create.mutate(newName || "Shared cart")}
+              disabled={create.isPending}
+              className="rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60">
+              Create
+            </button>
+          </div>
+          <JoinBox />
+        </div>
+      </div>
+    );
+  }
+
+  const inviteUrl = typeof window !== "undefined" ? `${window.location.origin}/join/${cart.share_code}` : "";
+  const isOwner = cart.owner_id === userId;
   const empty = totals.byProduct.length === 0;
 
   return (
@@ -31,132 +68,85 @@ function CartPage() {
         <div>
           <div className="text-xs uppercase tracking-widest text-muted-foreground">Shared cart</div>
           <input
-            value={state.cartName}
-            onChange={(e) => setCartName(e.target.value)}
-            className="mt-1 w-full max-w-lg bg-transparent font-display text-4xl outline-none md:text-5xl"
+            defaultValue={cart.name}
+            onBlur={(e) => e.target.value !== cart.name && rename.mutate(e.target.value)}
+            className="mt-1 w-full max-w-lg border-none bg-transparent font-display text-4xl outline-none md:text-5xl"
           />
         </div>
-        <button
-          onClick={() => { navigator.clipboard?.writeText(window.location.href); toast.success("Cart link copied"); }}
-          className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 text-sm hover:border-foreground/30"
-        >
-          <Share2 className="h-4 w-4" /> Share cart link
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1600); toast.success("Invite link copied"); }}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:border-foreground/30"
+          >
+            {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            Invite · code {cart.share_code}
+          </button>
+          <button onClick={leaveCurrent} className="rounded-full border border-border px-4 py-2 text-sm hover:border-foreground/30">Switch cart</button>
+        </div>
       </div>
 
-      {/* Members */}
-      <section className="mb-8 rounded-3xl border border-border bg-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="font-display text-xl">In this cart</h2>
-            <p className="text-sm text-muted-foreground">Tap a name to add items on their behalf.</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {state.members.map((m) => (
-            <div
-              key={m.id}
-              className={`group flex items-center gap-2 rounded-full border py-1.5 pl-3 pr-1.5 text-sm transition ${
-                state.currentMemberId === m.id ? "border-foreground bg-background" : "border-border bg-background/50"
-              }`}
-            >
-              <button onClick={() => setCurrentMember(m.id)} className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />
-                {m.name}
-                {state.currentMemberId === m.id && <span className="text-[10px] uppercase tracking-widest text-muted-foreground">active</span>}
-              </button>
-              {state.members.length > 1 && (
-                <button
-                  onClick={() => removeMember(m.id)}
-                  className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                  aria-label={`Remove ${m.name}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          ))}
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (!newName.trim()) return; addMember(newName.trim()); setNewName(""); }}
-            className="flex items-center gap-1 rounded-full border border-dashed border-border bg-background/40 py-1.5 pl-3 pr-1.5"
-          >
-            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Invite name"
-              className="w-28 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <button className="rounded-full bg-primary px-2 py-1 text-xs text-primary-foreground">Add</button>
-          </form>
-        </div>
-      </section>
-
       <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-        {/* Items */}
-        <section className="rounded-3xl border border-border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-xl">Items ({totals.byProduct.length})</h2>
-            {!empty && (
-              <button onClick={() => { clear(); toast("Cart cleared"); }} className="text-xs text-muted-foreground hover:text-destructive">Clear all</button>
-            )}
+        <div>
+          <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+            <Users className="h-4 w-4" /> {cart.members.length} people in this cart
+          </div>
+          <div className="mb-6 flex flex-wrap gap-2">
+            {cart.members.map((m) => (
+              <div key={m.user_id} className="group flex items-center gap-2 rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />
+                {m.display_name}{m.user_id === cart.owner_id && <span className="text-xs text-muted-foreground">· owner</span>}
+                {isOwner && m.user_id !== cart.owner_id && (
+                  <button onClick={() => kick.mutate(m.user_id)} className="ml-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
           {empty ? (
-            <div className="grid place-items-center gap-3 py-16 text-center">
-              <div className="grid h-14 w-14 place-items-center rounded-full bg-muted"><ShoppingBag className="h-6 w-6 text-muted-foreground" /></div>
-              <p className="text-muted-foreground">Your shared cart is empty.</p>
-              <Link to="/shop" className="mt-2 rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground">Browse the shop</Link>
+            <div className="rounded-3xl border border-dashed border-border p-10 text-center text-muted-foreground">
+              Nothing here yet. <Link to="/shop" className="text-brand hover:underline">Browse the shop</Link> and add something.
             </div>
           ) : (
-            <ul className="divide-y divide-border">
-              {totals.byProduct.map((row) => (
-                <li key={row.product.id} className="flex gap-4 py-4">
-                  <img src={row.product.image} alt={row.product.name} className="h-24 w-24 rounded-xl object-cover" />
-                  <div className="flex flex-1 flex-col">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{row.product.category}</div>
-                        <Link to="/product/$id" params={{ id: row.product.id }} className="font-display text-lg hover:underline">{row.product.name}</Link>
-                      </div>
-                      <button onClick={() => removeItem(row.product.id)} className="text-muted-foreground hover:text-destructive" aria-label="Remove">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-xs">
-                      <span className="h-2 w-2 rounded-full" style={{ background: row.addedBy?.color }} />
-                      <span className="text-muted-foreground">Added by {row.addedBy?.name ?? "—"}</span>
-                    </div>
-                    <div className="mt-auto flex items-end justify-between pt-3">
-                      <div className="inline-flex items-center rounded-full border border-border">
-                        <button onClick={() => updateQty(row.product.id, row.qty - 1)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-muted"><Minus className="h-3.5 w-3.5" /></button>
-                        <span className="w-8 text-center text-sm">{row.qty}</span>
-                        <button onClick={() => updateQty(row.product.id, row.qty + 1)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-muted"><Plus className="h-3.5 w-3.5" /></button>
-                      </div>
-                      <div className="font-medium">${row.line}</div>
+            <ul className="divide-y divide-border rounded-3xl border border-border bg-card">
+              {totals.byProduct.map((r) => (
+                <li key={r.itemId} className="flex items-center gap-4 p-4">
+                  <img src={r.product.image} alt={r.product.name} className="h-20 w-20 rounded-xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{r.product.name}</div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="h-2 w-2 rounded-full" style={{ background: r.addedBy?.color }} />
+                      added by {r.addedBy?.display_name ?? "—"}
                     </div>
                   </div>
+                  <div className="inline-flex items-center gap-1 rounded-full border border-border">
+                    <button onClick={() => setQty.mutate({ itemId: r.itemId, qty: r.qty - 1 })} className="grid h-8 w-8 place-items-center"><Minus className="h-3.5 w-3.5" /></button>
+                    <span className="w-6 text-center text-sm">{r.qty}</span>
+                    <button onClick={() => setQty.mutate({ itemId: r.itemId, qty: r.qty + 1 })} className="grid h-8 w-8 place-items-center"><Plus className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="w-20 text-right font-medium">${r.line}</div>
+                  <button onClick={() => remove.mutate(r.itemId)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </div>
 
-        {/* Summary */}
-        <aside className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-border bg-card p-6">
-            <h2 className="font-display text-xl">Bill split</h2>
-            <p className="text-sm text-muted-foreground">Auto-calculated from each person's items.</p>
-
+        <aside className="space-y-6">
+          <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
+              <LinkIcon className="h-3.5 w-3.5" /> Split preview
+            </div>
             <div className="mt-5 space-y-4">
               {totals.perMember.map((r) => {
                 const pct = totals.total > 0 ? Math.round((r.amount / totals.total) * 100) : 0;
                 return (
-                  <div key={r.member.id}>
+                  <div key={r.member.user_id}>
                     <div className="mb-1 flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.member.color }} />
-                        <span className="font-medium">{r.member.name}</span>
+                        <span className="font-medium">{r.member.display_name}</span>
                         <span className="text-xs text-muted-foreground">· {r.items} items</span>
                       </div>
                       <div className="font-medium">${r.amount}</div>
@@ -192,6 +182,25 @@ function CartPage() {
             Each person pays for the items they added, plus their share of tax. Fair, transparent, and no group-chat math.
           </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function JoinBox() {
+  const { join } = useSharedCart();
+  const [code, setCode] = useState("");
+  return (
+    <div className="mt-8 border-t border-dashed border-border pt-6">
+      <div className="text-xs uppercase tracking-widest text-muted-foreground">Or join a friend's cart</div>
+      <div className="mt-3 flex gap-2">
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Invite code" maxLength={8}
+          className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 font-mono text-sm uppercase tracking-widest" />
+        <button
+          onClick={() => join.mutate(code, { onError: (e: any) => toast.error(e.message) })}
+          disabled={!code || join.isPending}
+          className="rounded-full border border-border px-5 py-2.5 text-sm font-medium disabled:opacity-60"
+        >Join</button>
       </div>
     </div>
   );
